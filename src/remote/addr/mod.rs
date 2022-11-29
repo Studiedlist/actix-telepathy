@@ -14,6 +14,9 @@ use actix::dev::ToEnvelope;
 
 use tokio::sync::oneshot::{self, Receiver};
 
+pub use self::node::Node;
+
+pub mod node;
 pub mod resolver;
 #[cfg(test)]
 mod tests;
@@ -21,30 +24,18 @@ mod tests;
 /// Similar to actix::prelude::Addr but supports communication to remote actors on other nodes.
 #[derive(Deserialize, Serialize, Debug)]
 pub struct RemoteAddr {
-    pub socket_addr: SocketAddr,
-    #[serde(skip_serializing)]
-    #[serde(skip_deserializing)]
-    pub network_interface: Option<Addr<NetworkInterface>>,
+    pub node: Node,
     pub(crate) id: AddrRepresentation,
 }
 
 impl RemoteAddr {
-    pub fn new(
-        socket_addr: SocketAddr,
-        network_interface: Option<Addr<NetworkInterface>>,
-        id: AddrRepresentation,
-    ) -> Self {
-        RemoteAddr {
-            socket_addr,
-            network_interface,
-            id,
-        }
+    pub fn new(node: Node, id: AddrRepresentation) -> Self {
+        RemoteAddr { node, id }
     }
 
     pub fn new_from_id(socket_addr: SocketAddr, id: &str) -> Self {
         RemoteAddr {
-            socket_addr,
-            network_interface: None,
+            node: Node::new(socket_addr, None),
             id: AddrRepresentation::from_str(id).unwrap(),
         }
     }
@@ -55,8 +46,7 @@ impl RemoteAddr {
         id: &str,
     ) -> Self {
         RemoteAddr {
-            socket_addr,
-            network_interface: Some(network_interface),
+            node: Node::new(socket_addr, Some(network_interface)),
             id: AddrRepresentation::from_str(id).unwrap(),
         }
     }
@@ -65,11 +55,14 @@ impl RemoteAddr {
         socket_addr: SocketAddr,
         network_interface: Option<Addr<NetworkInterface>>,
     ) -> Self {
-        RemoteAddr::new(socket_addr, network_interface, AddrRepresentation::Gossip)
+        RemoteAddr::new(
+            Node::new(socket_addr, network_interface),
+            AddrRepresentation::Gossip,
+        )
     }
 
     pub fn set_network_interface(&mut self, network_interface: Addr<NetworkInterface>) {
-        self.network_interface = Some(network_interface);
+        self.node.network_interface = Some(network_interface);
     }
 
     pub fn change_id(&mut self, id: String) {
@@ -78,6 +71,7 @@ impl RemoteAddr {
 
     pub fn do_send<T: RemoteMessage + Serialize>(&self, msg: T) {
         let _r = self
+            .node
             .network_interface
             .as_ref()
             .expect("Network interface must be set!")
@@ -112,7 +106,8 @@ impl RemoteAddr {
         &self,
         msg: T,
     ) -> Request<NetworkInterface, WrappedClusterMessage> {
-        self.network_interface
+        self.node
+            .network_interface
             .as_ref()
             .expect("Network interface must be set!")
             .send(WrappedClusterMessage(ClusterMessage::Message(
@@ -123,17 +118,13 @@ impl RemoteAddr {
 
 impl Clone for RemoteAddr {
     fn clone(&self) -> Self {
-        RemoteAddr::new(
-            self.socket_addr,
-            self.network_interface.clone(),
-            self.id.clone(),
-        )
+        RemoteAddr::new(self.node.clone(), self.id.clone())
     }
 }
 
 impl PartialEq for RemoteAddr {
     fn eq(&self, other: &Self) -> bool {
-        self.socket_addr.eq(&other.socket_addr) && self.id.eq(&other.id)
+        self.node.eq(&other.node) && self.id.eq(&other.id)
     }
 }
 
@@ -141,7 +132,7 @@ impl Eq for RemoteAddr {}
 
 impl Hash for RemoteAddr {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.socket_addr.hash(state);
+        self.node.hash(state);
         self.id.hash(state);
     }
 }
