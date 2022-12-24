@@ -1,4 +1,5 @@
 mod actor;
+mod handler;
 mod addr;
 mod message;
 #[cfg(test)]

@@ -98,7 +98,7 @@ pub fn remote_actor_macro(input: TokenStream) -> TokenStream {
 /// }
 /// ```
 ///
-#[proc_macro_derive(RemoteMessage, attributes(with_source))]
+#[proc_macro_derive(RemoteMessage, attributes(with_source, with_response))]
 pub fn remote_message_macro(input: TokenStream) -> TokenStream {
     remote_message::remote_message_macro(input)
 }

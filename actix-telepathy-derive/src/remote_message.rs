@@ -38,6 +38,12 @@ pub fn remote_message_macro(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     let name = &input.ident;
     let (impl_generics, ty_generics, where_clause) = &input.generics.split_for_impl();
+
+    let result = match input.attrs.iter().find(|x| x.path.is_ident("with_response")) {
+        Some(_) => syn::parse_str::<syn::Type>("ResponseEnvelope").unwrap(),
+        None => syn::parse_str::<syn::Type>("()").unwrap(),
+    };
+
     let s = name.to_string();
     let sources = get_with_source_attr(&input).expect("Expected correct syntax");
 
@@ -80,7 +86,7 @@ pub fn remote_message_macro(input: TokenStream) -> TokenStream {
         }
 
         impl #impl_generics Message for #name #ty_generics #where_clause {
-            type Result = ();
+            type Result = #result;
         }
     };
 
