@@ -1,18 +1,43 @@
 use crate::{RemoteAddr, RemoteMessage};
-use actix::{Actor, Message};
 use actix::dev::{MessageResponse, OneshotSender};
+use actix::{Actor, Message};
+use std::convert::TryInto;
 
 pub struct ResponseEnvelope(());
 
 impl ResponseEnvelope {
-    pub fn handle<F, M>(addrs: Vec<RemoteAddr>, f: F) -> ResponseEnvelope
+    pub fn handle<F, M, I>(addrs: Vec<RemoteAddr>, f: F) -> ResponseEnvelope
     where
-        F: Fn() -> M,
+        F: Fn() -> I,
         M: RemoteMessage + Clone,
+        I: Into<M>,
     {
-        let message = f();
+        let message = f().into();
         for addr in addrs {
             addr.send(message.clone());
+        }
+        ResponseEnvelope(())
+    }
+    pub fn try_handle<F, M, T, D>(addrs: Vec<RemoteAddr>, default: D, f: F) -> ResponseEnvelope
+    where
+        F: Fn() -> T,
+        D: RemoteMessage + Clone,
+        M: RemoteMessage + Clone,
+        T: TryInto<M>,
+        <T as TryInto<M>>::Error: std::fmt::Debug,
+    {
+        match f().try_into() {
+            Ok(msg) => {
+                for addr in addrs {
+                    addr.send(msg.clone());
+                }
+            }
+            Err(err) => {
+                log::error!("Error occured:\n{err:?}");
+                for addr in addrs {
+                    addr.send(default.clone());
+                }
+            }
         }
         ResponseEnvelope(())
     }
@@ -22,10 +47,12 @@ pub trait MessageWithResponse: RemoteMessage {
     type Response: RemoteMessage;
 }
 
-impl<A, M> MessageResponse<A, M> for ResponseEnvelope 
-where A: Actor, M: Message {
-    fn handle(self, _ctx: &mut A::Context, _tx: Option<OneshotSender<M::Result>>) {
-    }
+impl<A, M> MessageResponse<A, M> for ResponseEnvelope
+where
+    A: Actor,
+    M: Message,
+{
+    fn handle(self, _ctx: &mut A::Context, _tx: Option<OneshotSender<M::Result>>) {}
 }
 
 #[cfg(test)]
@@ -55,9 +82,7 @@ mod tests {
         type Result = ResponseEnvelope;
 
         fn handle(&mut self, _msg: GetMessage, _: &mut Self::Context) -> ResponseEnvelope {
-            ResponseEnvelope::handle(vec![], || {
-                GetResponse
-            })
+            ResponseEnvelope::handle(vec![], || GetResponse)
         }
     }
 
